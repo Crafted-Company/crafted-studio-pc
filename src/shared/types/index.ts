@@ -392,6 +392,9 @@ export const IPC_CHANNELS = {
   FILE_RENAME: 'file:rename',
   FILE_TRASH: 'file:trash',
   FILE_DUPLICATE: 'file:duplicate',
+
+  TOOL_EXECUTE: 'tool:execute',
+  TOOL_GET_DEFINITIONS: 'tool:get-definitions',
 } as const;
 
 export * from './toolDock';
@@ -470,6 +473,8 @@ export interface ICcraftedAPI {
   openExternalUrl: (url: string) => Promise<boolean>;
   getDiscoveredApps: () => Promise<any[]>;
   arrangeWorkspace: () => Promise<boolean>;
+  executeTool: (request: ToolCallRequest, permissionDecision?: PermissionDecision) => Promise<ToolExecutionResult>;
+  getToolDefinitions: () => Promise<ToolDefinition[]>;
   onStreamStart: (callback: (payload: StreamStartPayload) => void) => () => void;
   onStreamToken: (callback: (payload: StreamTokenPayload) => void) => () => void;
   onStreamEnd: (callback: (payload: StreamEndPayload) => void) => () => void;
@@ -481,3 +486,35 @@ declare global {
     craftedAPI: ICcraftedAPI;
   }
 }
+
+export type ToolRiskLevel = 'SAFE' | 'CONFIRMATION_REQUIRED';
+
+export interface ToolDefinition {
+  id: string;
+  name: string;
+  description: string;
+  riskLevel: ToolRiskLevel;
+  parameters: {
+    type: 'object';
+    properties: Record<string, { type: string; description: string; required?: boolean }>;
+    required?: string[];
+  };
+}
+
+export interface ToolCallRequest {
+  toolId: string;
+  arguments: Record<string, any>;
+  callId?: string;
+}
+
+export interface ToolExecutionResult {
+  callId?: string;
+  toolId: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+  durationMs: number;
+}
+
+export type PermissionDecision = 'ALLOW_ONCE' | 'ALLOW_ALWAYS' | 'DENY';
+

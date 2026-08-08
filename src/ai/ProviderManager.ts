@@ -87,6 +87,16 @@ export class ProviderManager {
     return statuses;
   }
 
+  public static getCachedProviderStatuses(): AIProviderStatus[] {
+    const providers = ProviderRegistry.getAllProviders();
+    if (providers.length === 0) return [];
+    return providers.map((p) => ({
+      providerId: p.id as any,
+      isConfigured: true,
+      isAvailable: true,
+    }));
+  }
+
   public static async listModels(providerId?: AIProviderId): Promise<AIModel[]> {
     await this.initialize();
     const provider = await this.getActiveProvider(providerId);

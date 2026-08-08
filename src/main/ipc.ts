@@ -28,6 +28,8 @@ import { GitService } from '../services/GitService';
 import { ToolDockService } from '../services/ToolDockService';
 import { Win32WindowService } from '../services/Win32WindowService';
 import { ApiKeySecurityService } from '../services/ApiKeySecurityService';
+import { ToolRegistry } from '../services/ToolRegistry';
+import { ToolExecutionService } from '../services/ToolExecutionService';
 import { ModelProfileService } from '../services/ModelProfileService';
 import { AgentService } from '../services/AgentService';
 
@@ -35,12 +37,14 @@ export function setupIPCHandlers(mainWindow?: BrowserWindow): void {
   // Bootstrap State Initialization Handshake
   ipcMain.handle(IPC_CHANNELS.APP_GET_BOOTSTRAP_STATE, async (): Promise<BootstrapState> => {
     console.log('[IPC] APP_GET_BOOTSTRAP_STATE handshake triggered');
-    await ProviderManager.initialize();
+    // Run ProviderManager initialization in background without blocking instant app startup
+    ProviderManager.initialize().catch((err) => console.error('[ProviderManager] Async init error:', err));
+
     const appSettings = SettingsService.getSettings();
     const aiSettings = AISettingsService.getAISettings();
     const activeProject = await ProjectService.getActiveProject();
     const recentProjects = await ProjectService.getRecentProjects();
-    const providerStatuses = await ProviderManager.getProviderStatuses();
+    const providerStatuses = ProviderManager.getCachedProviderStatuses();
     const modelProfiles = ModelProfileService.getModelProfiles();
     const agents = AgentService.getAgents();
 
@@ -340,5 +344,12 @@ export function setupIPCHandlers(mainWindow?: BrowserWindow): void {
     if (!url) return false;
     await shell.openExternal(url);
     return true;
+  });
+
+  // System Tool Execution Handlers
+  ipcMain.handle(IPC_CHANNELS.TOOL_GET_DEFINITIONS, () => ToolRegistry.getAllTools());
+  ipcMain.handle(IPC_CHANNELS.TOOL_EXECUTE, async (_event, request: any, decision?: any) => {
+    const { ToolExecutionService } = await import('../services/ToolExecutionService');
+    return ToolExecutionService.executeTool(request, decision);
   });
 }

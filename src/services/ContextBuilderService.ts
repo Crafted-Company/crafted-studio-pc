@@ -135,8 +135,32 @@ export class ContextBuilderService {
       } catch {}
     }
 
+    let toolsInstructionsStr = '';
+    if (targetAgentId === 'agent-engineer' || targetAgentId === 'agent-architect') {
+      toolsInstructionsStr += `\n\n[AVAILABLE SYSTEM TOOLS]\n` +
+        `You have access to execute system tools for project files and terminal commands.\n` +
+        `To invoke a tool, output a \`\`\`tool_call JSON block formatted as follows:\n\n` +
+        `\`\`\`tool_call\n` +
+        `{\n` +
+        `  "tool": "write_file",\n` +
+        `  "arguments": {\n` +
+        `    "filePath": "test.md",\n` +
+        `    "content": "Hello World"\n` +
+        `  }\n` +
+        `}\n` +
+        `\`\`\`\n\n` +
+        `Available Tools:\n` +
+        `- read_file: { "filePath": string }\n` +
+        `- write_file: { "filePath": string, "content": string }\n` +
+        `- delete_file: { "filePath": string }\n` +
+        `- list_directory: { "directoryPath"?: string }\n` +
+        `- run_terminal_command: { "command": string }\n` +
+        `- git_status: {}\n` +
+        `- git_diff: { "filePath"?: string }\n`;
+    }
+
     // Assemble Final Composite System Prompt with ACTIVE EDITOR FILE placed prominently at top
-    const fullSystemPrompt = `${baseSystemPrompt}${activeFileStr}${projectContextStr}${attachedFilesStr}`;
+    const fullSystemPrompt = `${baseSystemPrompt}${activeFileStr}${projectContextStr}${attachedFilesStr}${toolsInstructionsStr}`;
 
     return {
       systemPrompt: fullSystemPrompt,

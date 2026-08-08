@@ -126,6 +126,9 @@ const api: ICcraftedAPI = {
 
   arrangeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.TOOL_DOCK_ARRANGE_WORKSPACE),
 
+  executeTool: (request, permissionDecision) => ipcRenderer.invoke(IPC_CHANNELS.TOOL_EXECUTE, request, permissionDecision),
+  getToolDefinitions: () => ipcRenderer.invoke(IPC_CHANNELS.TOOL_GET_DEFINITIONS),
+
   onStreamStart: (callback: (payload: StreamStartPayload) => void) => {
     const listener = (_event: any, payload: StreamStartPayload) => callback(payload);
     ipcRenderer.on(IPC_CHANNELS.CHAT_STREAM_START, listener);

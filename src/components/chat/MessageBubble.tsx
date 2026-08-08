@@ -4,6 +4,7 @@ import { Message } from '../../shared/types';
 import { useChatStore } from '../../stores/chatStore';
 import { cn } from '../../utils/cn';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { ToolCallCard } from './ToolCallCard';
 
 interface MessageBubbleProps {
   message: Message;
@@ -13,7 +14,7 @@ const COLLAPSE_CHAR_THRESHOLD = 500;
 const COLLAPSE_LINE_THRESHOLD = 15;
 const COLLAPSED_LINE_COUNT = 3;
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({ message }) => {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isStreaming = message.status === 'sending';
@@ -34,14 +35,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     (message.content.length > COLLAPSE_CHAR_THRESHOLD || lines.length > COLLAPSE_LINE_THRESHOLD);
 
   const getDisplayedText = () => {
+    const cleanText = message.content.replace(/```tool_call\s*[\s\S]*?```/g, '').trim();
     if (!isCollapsed || isStreaming || !isLongMessage) {
-      return message.content;
+      return cleanText;
     }
-    // Collapse aggressively to ~2-3 lines when explicitly collapsed by user
-    if (lines.length > COLLAPSED_LINE_COUNT) {
-      return lines.slice(0, COLLAPSED_LINE_COUNT).join('\n') + '\n...';
+    const cleanLines = cleanText.split('\n');
+    if (cleanLines.length > COLLAPSED_LINE_COUNT) {
+      return cleanLines.slice(0, COLLAPSED_LINE_COUNT).join('\n') + '\n...';
     }
-    return message.content.substring(0, 180) + '...';
+    return cleanText.substring(0, 180) + '...';
   };
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -162,6 +164,37 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                 <MarkdownRenderer content={getDisplayedText()} />
               </div>
 
+              {/* Render Interactive Tool Execution Cards for Detected Tool Calls */}
+              {!isUser && !isStreaming && (
+                (() => {
+                  const toolCalls: any[] = [];
+                  const regex = /```tool_call\s*([\s\S]*?)\s*```/g;
+                  let match;
+                  while ((match = regex.exec(message.content)) !== null) {
+                    try {
+                      const parsed = JSON.parse(match[1]);
+                      if (parsed.tool) {
+                        toolCalls.push({
+                          toolId: parsed.tool,
+                          arguments: parsed.arguments || {},
+                          callId: Math.random().toString(36).substring(7),
+                        });
+                      }
+                    } catch {}
+                  }
+
+                  if (toolCalls.length === 0) return null;
+
+                  return (
+                    <div className="mt-3 space-y-2">
+                      {toolCalls.map((tc, idx) => (
+                        <ToolCallCard key={tc.callId || idx} toolCall={tc} />
+                      ))}
+                    </div>
+                  );
+                })()
+              )}
+
               {/* Fade Overlay when explicitly collapsed by user */}
               {isCollapsed && (
                 <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-crafted-surface via-crafted-surface/80 to-transparent pointer-events-none" />
@@ -192,4 +225,4 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       </div>
     </div>
   );
-};
+});
