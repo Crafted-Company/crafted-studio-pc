@@ -3,6 +3,7 @@ dist/
 dist-electron/
 references/
 SS/
+release/
 *.log
 .DS_Store
 

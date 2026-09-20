@@ -10,6 +10,9 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
+    "dist:win": "npm run build && electron-builder --win nsis portable",
+    "dist:linux": "npm run build && electron-builder --linux AppImage zip",
+    "dist:all": "npm run build && electron-builder --win --linux",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
     "rebuild": "electron-rebuild"
   },
@@ -42,9 +45,50 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "com.craftedco.cscode",
+    "productName": "Crafted Studio Code",
+    "copyright": "Copyright © 2026 Aditya0973",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "cscode.png"
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**",
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "linux": {
+      "target": [
+        "zip",
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "cscode.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "cscode.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Crafted Studio Code"
+    }
   }
 }
