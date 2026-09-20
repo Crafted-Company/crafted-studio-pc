@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { Conversation, Message, CreateMessageInput, StreamStartPayload, StreamTokenPayload, StreamEndPayload } from '../shared/types';
+import { Conversation, Message, CreateMessageInput, PermissionDecision } from '../shared/types';
+import { AgentRuntimeState } from '../services/AgentRuntimeService';
 
 interface ChatStoreState {
   activeConversation: Conversation | null;
@@ -11,7 +12,7 @@ interface ChatStoreState {
   streamingContent: string;
   composerText: string;
   currentProjectId: string | null;
-  debugLog: string[];
+  runtimeState: AgentRuntimeState | null;
 
   setComposerText: (text: string) => void;
   loadConversationForProject: (projectId: string | null) => Promise<void>;
@@ -19,15 +20,13 @@ interface ChatStoreState {
   cancelGeneration: () => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
   clearConversation: () => Promise<void>;
+  respondToApproval: (callId: string, decision: PermissionDecision) => Promise<void>;
   subscribeStreamEvents: () => () => void;
 }
 
-const logStateChange = (action: string, state: { isSending: boolean; isGenerating: boolean; streamingMessageId: string | null; messagesCount: number }) => {
-  const ts = new Date().toISOString().substring(11, 23);
-  const msg = `[${ts}] ${action} -> isSending:${state.isSending}, isGenerating:${state.isGenerating}, streamId:${state.streamingMessageId || 'null'}, msgCount:${state.messagesCount}`;
-  console.log(`[CHAT_DEBUG] ${msg}`);
-  return msg;
-};
+// Throttling frame buffer (inspired by T3 Code event rendering optimizations)
+let rafPending = false;
+let pendingStateSync: AgentRuntimeState | null = null;
 
 export const useChatStore = create<ChatStoreState>((set, get) => ({
   activeConversation: null,
@@ -39,7 +38,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   streamingContent: '',
   composerText: '',
   currentProjectId: null,
-  debugLog: [],
+  runtimeState: null,
 
   setComposerText: (text: string) => set({ composerText: text }),
 
@@ -53,6 +52,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
         streamingMessageId: null,
         streamingContent: '',
         currentProjectId: null,
+        runtimeState: null,
       });
       return;
     }
@@ -63,11 +63,16 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       try {
         const conversation = await window.craftedAPI.getConversation(projectId);
         const msgs = await window.craftedAPI.getMessages(conversation.id);
+        const rState = await window.craftedAPI.getAgentRuntimeState();
 
         set({
           activeConversation: conversation,
           messages: msgs,
           isLoading: false,
+          runtimeState: rState,
+          isGenerating: rState.status === 'running' || rState.status === 'waiting_approval',
+          streamingMessageId: rState.streamingMessageId,
+          streamingContent: rState.streamingContent,
         });
       } catch (err) {
         console.error('[chatStore] Error loading conversation for project:', err);
@@ -87,7 +92,6 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     const trimmed = content.trim();
 
     if (!trimmed || !currentProjectId || isSending || isGenerating) {
-      console.warn('[CHAT_DEBUG] sendMessage BLOCKED due to state guard:', { trimmed: !!trimmed, currentProjectId: !!currentProjectId, isSending, isGenerating });
       return null;
     }
 
@@ -101,14 +105,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       metadata,
     };
 
-    const log1 = logStateChange('sendMessage START', { isSending: true, isGenerating: true, streamingMessageId: null, messagesCount: get().messages.length });
     set((state) => ({
       isSending: true,
-      isGenerating: true,
       composerText: '',
-      streamingContent: '',
       messages: [...state.messages, tempUserMsg],
-      debugLog: [...state.debugLog.slice(-15), log1],
     }));
 
     if (typeof window !== 'undefined' && window.craftedAPI) {
@@ -123,37 +123,17 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
         const userMsg = await window.craftedAPI.sendMessage(input);
 
         if (userMsg) {
-          const log2 = logStateChange('sendMessage IPC_RETURNED', { isSending: false, isGenerating: get().isGenerating, streamingMessageId: get().streamingMessageId, messagesCount: get().messages.length });
-          set((state) => {
-            const hasTemp = state.messages.some((m) => m.id === tempUserMsg.id);
-            const nextMessages = hasTemp
-              ? state.messages.map((m) => (m.id === tempUserMsg.id ? userMsg : m))
-              : [...state.messages, userMsg];
-
-            return {
-              isSending: false,
-              messages: nextMessages,
-              debugLog: [...state.debugLog.slice(-15), log2],
-            };
-          });
+          set((state) => ({
+            isSending: false,
+            messages: state.messages.map((m) => (m.id === tempUserMsg.id ? userMsg : m)),
+          }));
         }
 
         return userMsg;
       } catch (err) {
         console.error('[chatStore] Error sending message:', err);
-        const logErr = logStateChange('sendMessage ERROR', { isSending: false, isGenerating: false, streamingMessageId: null, messagesCount: get().messages.length });
-        set((state) => ({
-          isSending: false,
-          isGenerating: false,
-          debugLog: [...state.debugLog.slice(-15), logErr],
-        }));
+        set({ isSending: false, isGenerating: false });
         return null;
-      } finally {
-        const logFin = logStateChange('sendMessage FINALLY', { isSending: false, isGenerating: get().isGenerating, streamingMessageId: get().streamingMessageId, messagesCount: get().messages.length });
-        set((state) => ({
-          isSending: false,
-          debugLog: [...state.debugLog.slice(-15), logFin],
-        }));
       }
     }
 
@@ -165,25 +145,19 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     const { activeConversation } = get();
     if (!activeConversation) return;
 
-    const logCancel = logStateChange('cancelGeneration CLICKED', { isSending: false, isGenerating: false, streamingMessageId: null, messagesCount: get().messages.length });
-    set((state) => ({ debugLog: [...state.debugLog.slice(-15), logCancel] }));
-
     if (typeof window !== 'undefined' && window.craftedAPI) {
       try {
         await window.craftedAPI.cancelGeneration(activeConversation.id);
         const updatedMsgs = await window.craftedAPI.getMessages(activeConversation.id);
-        const logDone = logStateChange('cancelGeneration DONE', { isSending: false, isGenerating: false, streamingMessageId: null, messagesCount: updatedMsgs.length });
-        set((state) => ({
+        set({
           messages: updatedMsgs,
           isGenerating: false,
           isSending: false,
           streamingMessageId: null,
           streamingContent: '',
-          debugLog: [...state.debugLog.slice(-15), logDone],
-        }));
+        });
       } catch (err) {
         console.error('[chatStore] Error cancelling generation:', err);
-        set({ isGenerating: false, isSending: false });
       }
     }
   },
@@ -221,10 +195,16 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     if (typeof window !== 'undefined' && window.craftedAPI) {
       try {
         await window.craftedAPI.clearConversation(currentProjectId);
-        set({ messages: [], isGenerating: false, isSending: false, streamingContent: '', debugLog: [] });
+        set({ messages: [], isGenerating: false, isSending: false, streamingContent: '', runtimeState: null });
       } catch (err) {
         console.error('[chatStore] Error clearing conversation:', err);
       }
+    }
+  },
+
+  respondToApproval: async (callId: string, decision: PermissionDecision) => {
+    if (typeof window !== 'undefined' && window.craftedAPI) {
+      await window.craftedAPI.respondToToolApproval(callId, decision);
     }
   },
 
@@ -233,80 +213,49 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       return () => {};
     }
 
-    const unsubStart = window.craftedAPI.onStreamStart((payload: StreamStartPayload) => {
-      const { activeConversation } = get();
-      if (!activeConversation || payload.conversationId !== activeConversation.id) return;
+    const unsubAgentSync = window.craftedAPI.onAgentStateSync((state: AgentRuntimeState) => {
+      pendingStateSync = state;
 
-      set((state) => {
-        const existingMsg = state.messages.find((m) => m.id === payload.messageId);
-        const logStart = logStateChange('onStreamStart EVENT', { isSending: state.isSending, isGenerating: true, streamingMessageId: payload.messageId, messagesCount: existingMsg ? state.messages.length : state.messages.length + 1 });
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(async () => {
+          rafPending = false;
+          const nextState = pendingStateSync;
+          if (!nextState) return;
 
-        if (!existingMsg) {
-          const newAiMsg: Message = {
-            id: payload.messageId,
-            conversationId: payload.conversationId,
-            role: payload.role,
-            content: payload.initialContent || '',
-            status: 'sending',
-            createdAt: new Date().toISOString(),
-          };
-          return {
-            messages: [...state.messages, newAiMsg],
-            isGenerating: true,
-            streamingMessageId: payload.messageId,
-            streamingContent: payload.initialContent || '',
-            debugLog: [...state.debugLog.slice(-15), logStart],
-          };
-        } else {
-          return {
-            isGenerating: true,
-            streamingMessageId: payload.messageId,
-            debugLog: [...state.debugLog.slice(-15), logStart],
-          };
-        }
-      });
-    });
+          const currentActiveConv = get().activeConversation;
+          const isOurConv = !nextState.conversationId || (currentActiveConv && nextState.conversationId === currentActiveConv.id);
 
-    const unsubToken = window.craftedAPI.onStreamToken((payload: StreamTokenPayload) => {
-      const { activeConversation } = get();
-      if (!activeConversation || payload.conversationId !== activeConversation.id) return;
+          if (!isOurConv) return;
 
-      set((state) => {
-        const updated = state.messages.map((m) =>
-          m.id === payload.messageId ? { ...m, content: payload.fullText } : m
-        );
-        return {
-          messages: updated,
-          isGenerating: true,
-          streamingMessageId: payload.messageId,
-          streamingContent: payload.fullText,
-        };
-      });
-    });
+          const isBusy = nextState.status === 'running' || nextState.status === 'waiting_approval';
 
-    const unsubEnd = window.craftedAPI.onStreamEnd((payload: StreamEndPayload) => {
-      const { activeConversation } = get();
-      if (!activeConversation || payload.conversationId !== activeConversation.id) return;
+          set({
+            runtimeState: nextState,
+            isGenerating: isBusy,
+            streamingMessageId: nextState.streamingMessageId,
+            streamingContent: nextState.streamingContent,
+          });
 
-      window.craftedAPI.getMessages(payload.conversationId).then((msgs) => {
-        set((state) => {
-          const logEnd = logStateChange('onStreamEnd EVENT', { isSending: false, isGenerating: false, streamingMessageId: null, messagesCount: msgs.length });
-          return {
-            messages: msgs,
-            isGenerating: false,
-            isSending: false,
-            streamingMessageId: null,
-            streamingContent: '',
-            debugLog: [...state.debugLog.slice(-15), logEnd],
-          };
+          // Settle turn on completion / error / interrupted
+          if (nextState.status === 'completed' || nextState.status === 'error' || nextState.status === 'interrupted') {
+            if (currentActiveConv) {
+              const msgs = await window.craftedAPI.getMessages(currentActiveConv.id);
+              set({
+                messages: msgs,
+                isGenerating: false,
+                isSending: false,
+                streamingMessageId: null,
+                streamingContent: '',
+              });
+            }
+          }
         });
-      });
+      }
     });
 
     return () => {
-      unsubStart();
-      unsubToken();
-      unsubEnd();
+      unsubAgentSync();
     };
   },
 }));

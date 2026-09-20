@@ -32,6 +32,7 @@ import { ToolRegistry } from '../services/ToolRegistry';
 import { ToolExecutionService } from '../services/ToolExecutionService';
 import { ModelProfileService } from '../services/ModelProfileService';
 import { AgentService } from '../services/AgentService';
+import { AgentRuntimeService } from '../services/AgentRuntimeService';
 
 export function setupIPCHandlers(mainWindow?: BrowserWindow): void {
   // Bootstrap State Initialization Handshake
@@ -153,6 +154,12 @@ export function setupIPCHandlers(mainWindow?: BrowserWindow): void {
       ExplorerService.saveExpandedPaths(projectId, expandedPaths)
   );
 
+  // Agent Runtime Engine Controls (T3 Code + Cline Extraction)
+  ipcMain.handle('agent:getState', () => AgentRuntimeService.getRuntimeState());
+  ipcMain.handle('agent:respondApproval', (_event, callId: string, decision: import('../shared/types').PermissionDecision) =>
+    AgentRuntimeService.respondToApproval(callId, decision)
+  );
+
   // Chat & Conversation Controls
   ipcMain.handle(IPC_CHANNELS.CHAT_GET_CONVERSATION, (_event, projectId: string) =>
     ChatService.getOrCreateConversation(projectId)
@@ -160,11 +167,12 @@ export function setupIPCHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.CHAT_GET_MESSAGES, (_event, conversationId: string) =>
     ChatService.getMessages(conversationId)
   );
-  ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, (_event, input: CreateMessageInput) =>
-    ChatService.sendMessage(input, mainWindow)
-  );
+  ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, (_event, input: CreateMessageInput) => {
+    AgentRuntimeService.setMainWindow(mainWindow || null);
+    return AgentRuntimeService.dispatchUserMessage(input);
+  });
   ipcMain.handle(IPC_CHANNELS.CHAT_CANCEL_GENERATION, (_event, conversationId: string) =>
-    ChatService.cancelGeneration(conversationId)
+    AgentRuntimeService.cancelActiveTurn(conversationId)
   );
   ipcMain.handle(IPC_CHANNELS.CHAT_CLEAR_CONVERSATION, (_event, projectId: string) =>
     ChatService.clearConversation(projectId)

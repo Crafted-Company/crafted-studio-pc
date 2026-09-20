@@ -165,19 +165,34 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({ message
               </div>
 
               {/* Render Interactive Tool Execution Cards for Detected Tool Calls */}
-              {!isUser && !isStreaming && (
+              {!isUser && (
                 (() => {
+                  const metadataToolCalls = (message.metadata?.toolCalls as any[]) || [];
+                  if (metadataToolCalls.length > 0) {
+                    return (
+                      <div className="mt-3 space-y-2">
+                        {metadataToolCalls.map((entry, idx) => (
+                          <ToolCallCard
+                            key={entry.request?.callId || idx}
+                            toolCall={entry.request}
+                            executionResult={entry.result}
+                          />
+                        ))}
+                      </div>
+                    );
+                  }
+
                   const toolCalls: any[] = [];
-                  const regex = /```tool_call\s*([\s\S]*?)\s*```/g;
+                  const regex = /```(?:tool_call|json)\s*(\{[\s\S]*?"toolId"[\s\S]*?\})\s*```/g;
                   let match;
                   while ((match = regex.exec(message.content)) !== null) {
                     try {
                       const parsed = JSON.parse(match[1]);
-                      if (parsed.tool) {
+                      if (parsed.toolId) {
                         toolCalls.push({
-                          toolId: parsed.tool,
+                          toolId: parsed.toolId,
                           arguments: parsed.arguments || {},
-                          callId: Math.random().toString(36).substring(7),
+                          callId: parsed.callId || `tool-call-${idx}`,
                         });
                       }
                     } catch {}

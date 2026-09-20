@@ -1,7 +1,7 @@
 {
-  "name": "crafted-studio",
+  "name": "crafted-studio-code",
   "version": "1.0.0",
-  "description": "Crafted Studio - Premium AI Desktop Workspace",
+  "description": "Crafted Studio Code - Agentic AI Desktop Workspace & Engineering Cockpit",
   "main": "dist/main/index.js",
   "scripts": {
     "dev:main": "tsc -p tsconfig.main.json --watch",

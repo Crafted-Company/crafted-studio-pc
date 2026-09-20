@@ -18,7 +18,7 @@ export class SettingsService {
 
       return {
         theme: 'dark',
-        appName: (settingsMap.appName as string) || 'Crafted Studio',
+        appName: (settingsMap.appName as string) || 'Crafted Studio Code',
         version: (settingsMap.version as string) || '1.0.0',
         logoPath: (settingsMap.logoPath as string | undefined) || undefined,
         activeProjectId: (settingsMap.activeProjectId as string | undefined) || undefined,
@@ -27,7 +27,7 @@ export class SettingsService {
       console.error('[SettingsService] Error reading settings from DB:', err);
       return {
         theme: 'dark',
-        appName: 'Crafted Studio',
+        appName: 'Crafted Studio Code',
         version: '1.0.0',
       };
     }

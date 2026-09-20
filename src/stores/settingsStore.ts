@@ -11,7 +11,7 @@ interface SettingsStoreState {
 export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   settings: {
     theme: 'dark',
-    appName: 'Crafted Studio',
+    appName: 'Crafted Studio Code',
     version: '1.0.0',
     logoPath: undefined,
   },

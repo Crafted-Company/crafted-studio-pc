@@ -399,6 +399,58 @@ export const IPC_CHANNELS = {
 
 export * from './toolDock';
 
+export type ToolRiskLevel = 'SAFE' | 'CONFIRMATION_REQUIRED';
+
+export interface ToolDefinition {
+  id: string;
+  name: string;
+  description: string;
+  riskLevel: ToolRiskLevel;
+  parameters: {
+    type: 'object';
+    properties: Record<string, { type: string; description: string; required?: boolean }>;
+    required?: string[];
+  };
+}
+
+export interface ToolCallRequest {
+  toolId: string;
+  arguments: Record<string, any>;
+  callId?: string;
+}
+
+export interface ToolExecutionResult {
+  callId?: string;
+  toolId: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+  durationMs: number;
+}
+
+export type PermissionDecision = 'ALLOW_ONCE' | 'ALLOW_ALWAYS' | 'DENY';
+
+export type RuntimeTurnState = 'idle' | 'running' | 'waiting_approval' | 'interrupted' | 'error' | 'completed';
+
+export interface PendingToolApproval {
+  callId: string;
+  toolId: string;
+  arguments: Record<string, any>;
+  conversationId: string;
+  messageId: string;
+  requestedAt: string;
+}
+
+export interface AgentRuntimeState {
+  conversationId: string | null;
+  activeTurnId: string | null;
+  status: RuntimeTurnState;
+  streamingMessageId: string | null;
+  streamingContent: string;
+  pendingApproval: PendingToolApproval | null;
+  updatedAt: string;
+}
+
 export interface ICcraftedAPI {
   getBootstrapState: () => Promise<BootstrapState>;
   minimizeWindow: () => Promise<void>;
@@ -440,12 +492,13 @@ export interface ICcraftedAPI {
   saveWorkbenchSession: (projectId: string, activeTabPath: string | null, tabs: TabItem[]) => Promise<boolean>;
   getAISettings: () => Promise<AISettings>;
   saveAISettings: (settings: Partial<AISettings>) => Promise<boolean>;
-  getAIStatuses: () => Promise<unknown[]>;
-  listAIModels: (providerId: string) => Promise<unknown[]>;
-  testAIConnection: (providerId: string, baseUrl?: string) => Promise<{ isAvailable: boolean; success: boolean; error?: string }>;
+  getAIStatuses: () => Promise<any[]>;
+  listAIModels: (providerId: string) => Promise<any[]>;
+  testAIConnection: (providerId: string, baseUrl?: string) => Promise<{ success: boolean; isAvailable: boolean; error?: string }>;
   getAISecurityStatus: () => Promise<{ isSafeStorageAvailable: boolean }>;
   saveAIProviderKey: (providerId: string, apiKey: string, mode?: 'safeStorage' | 'sessionOnly' | 'unencryptedOptIn') => Promise<boolean>;
   getAIProviderKey: (providerId: string) => Promise<string | null>;
+  deleteAIProviderKey?: (providerId: string) => Promise<boolean>;
   getModelProfiles: () => Promise<ModelProfile[]>;
   saveModelProfile: (profile: Partial<ModelProfile>) => Promise<ModelProfile>;
   deleteModelProfile: (id: string) => Promise<boolean>;
@@ -479,6 +532,10 @@ export interface ICcraftedAPI {
   onStreamToken: (callback: (payload: StreamTokenPayload) => void) => () => void;
   onStreamEnd: (callback: (payload: StreamEndPayload) => void) => () => void;
   onWindowMaximizedChange: (callback: (isMaximized: boolean) => void) => () => void;
+  // Agent Runtime Push Sync Channels
+  onAgentStateSync: (callback: (state: AgentRuntimeState) => void) => () => void;
+  getAgentRuntimeState: () => Promise<AgentRuntimeState>;
+  respondToToolApproval: (callId: string, decision: PermissionDecision) => Promise<boolean>;
 }
 
 declare global {
@@ -487,34 +544,4 @@ declare global {
   }
 }
 
-export type ToolRiskLevel = 'SAFE' | 'CONFIRMATION_REQUIRED';
-
-export interface ToolDefinition {
-  id: string;
-  name: string;
-  description: string;
-  riskLevel: ToolRiskLevel;
-  parameters: {
-    type: 'object';
-    properties: Record<string, { type: string; description: string; required?: boolean }>;
-    required?: string[];
-  };
-}
-
-export interface ToolCallRequest {
-  toolId: string;
-  arguments: Record<string, any>;
-  callId?: string;
-}
-
-export interface ToolExecutionResult {
-  callId?: string;
-  toolId: string;
-  success: boolean;
-  output?: string;
-  error?: string;
-  durationMs: number;
-}
-
-export type PermissionDecision = 'ALLOW_ONCE' | 'ALLOW_ALWAYS' | 'DENY';
 

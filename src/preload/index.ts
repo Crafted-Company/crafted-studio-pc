@@ -152,6 +152,14 @@ const api: ICcraftedAPI = {
     ipcRenderer.on('window:maximized-change', listener);
     return () => ipcRenderer.removeListener('window:maximized-change', listener);
   },
+
+  onAgentStateSync: (callback) => {
+    const listener = (_event: any, state: any) => callback(state);
+    ipcRenderer.on('agent:stateSync', listener);
+    return () => ipcRenderer.removeListener('agent:stateSync', listener);
+  },
+  getAgentRuntimeState: () => ipcRenderer.invoke('agent:getState'),
+  respondToToolApproval: (callId, decision) => ipcRenderer.invoke('agent:respondApproval', callId, decision),
 };
 
 if (process.contextIsolated) {
